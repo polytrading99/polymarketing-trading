@@ -1,0 +1,8 @@
+<!doctype html><meta charset="utf-8">
+<pre id="out"></pre>
+<script>
+ const ws = new WebSocket("ws://localhost:8000/ws/pnl");
+ ws.onmessage = e => (document.getElementById('out').textContent += e.data + "\n");
+ ws.onopen = () => console.log("WS open");
+ ws.onerror = console.error;
+</script>

@@ -1,0 +1,21 @@
+# Python cache files
+__pycache__/
+*.pyc
+
+# Environment files
+.env
+.env.local
+
+# Node/Next.js
+node_modules/
+.next/
+out/
+
+# OS/editor junk
+.DS_Store
+.idea/
+.vscode/
+
+# Docker and logs
+dbdata/
+*.log
