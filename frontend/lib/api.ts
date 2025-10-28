@@ -1,9 +1,12 @@
 
-export const BACKEND_URL = () => process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
-export const WS_URL = () => (BACKEND_URL().replace('http','ws') + '/ws/pnl');
+export const BACKEND_URL = () => '';
+export const WS_URL = () => {
+  const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000';
+  return origin.replace('http', 'ws') + '/api/ws/pnl';
+};
 
 const fetcher = async (path: string, init?: RequestInit) => {
-  const res = await fetch(BACKEND_URL() + path, { ...init, cache: 'no-store' });
+  const res = await fetch('/api' + path, { ...init, cache: 'no-store' });
   if (!res.ok) throw new Error(await res.text());
   return res.json();
 };
