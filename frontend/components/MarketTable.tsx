@@ -16,16 +16,24 @@ export function MarketTable({
   onStop,
   loadingId,
   activeIds,
+  pendingStarts,
+  pendingStops,
+  isLoading,
 }: {
   markets: Market[];
   onStart: (id: number) => void;
   onStop: (id: number) => void;
   loadingId: number | null;
   activeIds: Set<number>;
+  pendingStarts: Set<number>;
+  pendingStops: Set<number>;
+  isLoading?: boolean;
 }) {
+  const rows = markets || [];
+
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table>
+    <div className="table-wrap">
+      <table className="table">
         <thead>
           <tr>
             <th style={{ width: 70 }}>ID</th>
@@ -38,55 +46,77 @@ export function MarketTable({
           </tr>
         </thead>
         <tbody>
-          {(markets || []).map((m) => {
+          {rows.map((m) => {
             const isActive = activeIds.has(m.id);
+            const isStarting = pendingStarts.has(m.id);
+            const isStopping = pendingStops.has(m.id);
             const isBusy = loadingId === m.id;
+
+            let statusText = 'Idle';
+            let statusClass = 'status-idle';
+            if (isStarting) {
+              statusText = 'Starting…';
+              statusClass = 'status-starting';
+            } else if (isStopping) {
+              statusText = 'Stopping…';
+              statusClass = 'status-stopping';
+            } else if (isActive) {
+              statusText = 'Active';
+              statusClass = 'status-active';
+            }
+
+            const disableStart = isBusy || isActive || isStarting;
+            const disableStop = isBusy || (!isActive && !isStopping);
+
             return (
-              <tr key={m.id} className={clsx(isActive && 'row-active')}>
+              <tr
+                key={m.id}
+                className={clsx(
+                  isActive && 'row-active',
+                  isStarting && 'row-starting',
+                  isStopping && 'row-stopping'
+                )}
+              >
                 <td>{m.id}</td>
                 <td>{m.name}</td>
                 <td>{m.external_id}</td>
                 <td>{m.base_spread_bps}</td>
                 <td>{m.enabled ? 'Yes' : 'No'}</td>
                 <td>
-                  <span className={clsx('badge', isActive ? 'status-active' : 'status-idle')}>
-                    {isActive ? 'Active' : 'Idle'}
-                  </span>
+                  <span className={clsx('status-badge', statusClass)}>{statusText}</span>
                 </td>
-                <td className="row">
-                  <button
-                    onClick={() => onStart(m.id)}
-                    disabled={isBusy || isActive}
-                    aria-busy={isBusy && !isActive}
-                  >
-                    {isBusy && !isActive ? 'Starting…' : 'Start'}
-                  </button>
-                  <button
-                    onClick={() => onStop(m.id)}
-                    disabled={isBusy || !isActive}
-                    aria-busy={isBusy && isActive}
-                  >
-                    {isBusy && isActive ? 'Stopping…' : 'Stop'}
-                  </button>
+                <td>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      onClick={() => onStart(m.id)}
+                      disabled={disableStart}
+                      aria-busy={isStarting}
+                      className="btn btn-success btn-mini"
+                    >
+                      {isStarting ? 'Starting…' : 'Start'}
+                    </button>
+                    <button
+                      onClick={() => onStop(m.id)}
+                      disabled={disableStop}
+                      aria-busy={isStopping}
+                      className="btn btn-secondary btn-mini"
+                    >
+                      {isStopping ? 'Stopping…' : 'Stop'}
+                    </button>
+                  </div>
                 </td>
               </tr>
             );
           })}
-          {(!markets || markets.length === 0) && (
+          {(rows.length === 0 || isLoading) && (
             <tr>
-              <td colSpan={7} style={{ padding: '18px', textAlign: 'center', color: '#6b7280' }}>
-                No markets yet
+              <td colSpan={7} style={{ padding: 18, textAlign: 'center', color: '#6b7280' }}>
+                {isLoading ? 'Loading markets…' : 'No markets yet'}
               </td>
             </tr>
           )}
         </tbody>
       </table>
-      <style jsx global>{`
-        .row-active { background: #f0fff4; }                 /* subtle green */
-        .status-active { border-color: #10b981; color: #065f46; background: #d1fae5; }
-        .status-idle { color: #374151; }
-        button[disabled] { opacity: 0.6; cursor: not-allowed; }
-      `}</style>
     </div>
   );
 }
