@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { requestNonce, verifySignature, saveToken, loadToken } from '../lib/api';
 
 /* ====== CONFIG ====== */
 const BACKEND_URL =
@@ -20,19 +21,20 @@ type Market = {
   enabled: boolean;
 };
 
-type TickMsg = { type: 'pnl_tick'; market_id: number; pnl: number };
+type TickMsg = { type: 'pnl_tick'; market_id: number; pnl: number; inventory?: number };
 
 /* ====== PAGE ====== */
 export default function DashboardPage() {
   const [backendOk, setBackendOk] = useState<'checking' | 'ok' | 'down'>('checking');
-  const [walletOpen, setWalletOpen] = useState(false);
   const [walletAddr, setWalletAddr] = useState<string | null>(null);
   const [markets, setMarkets] = useState<Market[]>([]);
+  const [selectedMarketId, setSelectedMarketId] = useState<number | null>(null);
   const [loadingId, setLoadingId] = useState<number | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [wsStatus, setWsStatus] = useState<'connecting' | 'open' | 'closed' | 'error'>('connecting');
   const lastTickRef = useRef<Map<number, number>>(new Map());
-  const [pnlPoints, setPnlPoints] = useState<{ ts: number; pnl: number }[]>([]);
+  const [pnlByMarket, setPnlByMarket] = useState<Map<number, { ts: number; pnl: number }[]>>(new Map());
+  const [logByMarket, setLogByMarket] = useState<Map<number, string[]>>(new Map());
 
   // check backend
   useEffect(() => {
@@ -49,7 +51,12 @@ export default function DashboardPage() {
     const load = () => {
       fetch(BACKEND_URL + '/markets')
         .then((r) => r.json())
-        .then((data) => setMarkets(data))
+        .then((data) => {
+          setMarkets(data);
+          if (!selectedMarketId && data.length > 0) {
+            setSelectedMarketId(data[0].id);
+          }
+        })
         .catch(() => {});
     };
     load();
@@ -71,10 +78,21 @@ export default function DashboardPage() {
           const msg: TickMsg = JSON.parse(ev.data);
           if (msg?.type === 'pnl_tick') {
             lastTickRef.current.set(msg.market_id, Date.now());
-            // push PnL to small chart
-            setPnlPoints((prev) => {
-              const next = [...prev, { ts: Date.now(), pnl: msg.pnl }];
-              return next.slice(-40);
+            const ts = Date.now();
+            setPnlByMarket((prev) => {
+              const next = new Map(prev);
+              const arr = next.get(msg.market_id) || [];
+              arr.push({ ts, pnl: msg.pnl });
+              next.set(msg.market_id, arr.slice(-80));
+              return next;
+            });
+            setLogByMarket((prev) => {
+              const next = new Map(prev);
+              const arr = next.get(msg.market_id) || [];
+              const line = `Tick  pnl=${msg.pnl.toFixed(4)} inv=${(msg.inventory ?? 0).toFixed(4)} @ ${new Date(ts).toLocaleTimeString()}`;
+              arr.push(line);
+              next.set(msg.market_id, arr.slice(-100));
+              return next;
             });
           }
         } catch {
@@ -95,12 +113,21 @@ export default function DashboardPage() {
       if (now - ts < 5000) ids.add(mid);
     }
     return ids;
-  }, [markets, wsStatus, pnlPoints]);
+  }, [markets, wsStatus, pnlByMarket]);
+
+  const selectedSeries = useMemo(() => {
+    if (!selectedMarketId) return [] as { ts: number; pnl: number }[];
+    return pnlByMarket.get(selectedMarketId) || [];
+  }, [pnlByMarket, selectedMarketId]);
 
   const handleStart = async (id: number) => {
     setLoadingId(id);
     try {
-      const res = await fetch(`${BACKEND_URL}/markets/${id}/start`, { method: 'POST' });
+      const token = loadToken();
+      const res = await fetch(`${BACKEND_URL}/markets/${id}/start`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
       if (!res.ok) throw new Error('start failed');
       lastTickRef.current.set(id, Date.now());
       setToast(`Started market #${id}`);
@@ -114,7 +141,11 @@ export default function DashboardPage() {
   const handleStop = async (id: number) => {
     setLoadingId(id);
     try {
-      const res = await fetch(`${BACKEND_URL}/markets/${id}/stop`, { method: 'POST' });
+      const token = loadToken();
+      const res = await fetch(`${BACKEND_URL}/markets/${id}/stop`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
       if (!res.ok) throw new Error('stop failed');
       lastTickRef.current.delete(id);
       setToast(`Stopped market #${id}`);
@@ -125,19 +156,34 @@ export default function DashboardPage() {
     }
   };
 
-  // fake wallet connect
-  const handleConnectWallet = () => {
-    if (walletAddr) {
-      setWalletAddr(null);
-      return;
+  // wallet connect (MetaMask)
+  const handleConnectWallet = async () => {
+    try {
+      if (walletAddr) {
+        setWalletAddr(null);
+        saveToken('');
+        return;
+      }
+      const eth = (window as any).ethereum;
+      if (!eth) {
+        setToast('MetaMask not found');
+        return;
+      }
+      const accounts: string[] = await eth.request({ method: 'eth_requestAccounts' });
+      const addr = accounts[0];
+      const n = await requestNonce(addr);
+      const signature: string = await eth.request({ method: 'personal_sign', params: [n.message, addr] });
+      const v = await verifySignature(addr, signature);
+      if (v?.token) {
+        saveToken(v.token);
+        setWalletAddr(addr);
+        setToast('Wallet connected');
+      } else {
+        setToast('Auth failed');
+      }
+    } catch {
+      setToast('Wallet connection failed');
     }
-    setWalletOpen(true);
-  };
-
-  const chooseWallet = (addr: string) => {
-    setWalletAddr(addr);
-    setWalletOpen(false);
-    setToast('Wallet connected');
   };
 
   return (
@@ -181,10 +227,10 @@ export default function DashboardPage() {
                   const isActive = activeIds.has(m.id);
                   const isBusy = loadingId === m.id;
                   return (
-                    <li key={m.id} className="market-row">
+                    <li key={m.id} className="market-row" onClick={() => setSelectedMarketId(m.id)} style={{ cursor: 'pointer' }}>
                       <div>
                         <p className="market-title">
-                          {m.name}
+                          {m.name} {selectedMarketId === m.id ? <span className="badge" style={{ marginLeft: 6 }}>Selected</span> : null}
                           {isActive ? (
                             <span className="badge badge-active">Active</span>
                           ) : (
@@ -223,16 +269,25 @@ export default function DashboardPage() {
         <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingBottom: 16 }}>
           <div className="card-body" style={{ paddingBottom: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <h2 style={{ fontWeight: 600 }}>Live PnL</h2>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <h2 style={{ fontWeight: 600 }}>Live PnL</h2>
+                <span className="tag">{selectedMarketId ? `Market #${selectedMarketId}` : 'No market selected'}</span>
+              </div>
               <span style={{ fontSize: 12, color: 'var(--muted)' }}>
-                {pnlPoints.length ? `${pnlPoints[pnlPoints.length - 1].pnl.toFixed(4)} USDC` : '—'}
+                {selectedSeries.length ? `${selectedSeries[selectedSeries.length - 1].pnl.toFixed(4)} USDC` : '—'}
               </span>
             </div>
             <div className="sparkline-box">
-              {pnlPoints.length === 0 ? (
+              {selectedSeries.length === 0 ? (
                 <p className="sparkline-empty">Waiting for ticks…</p>
               ) : (
-                <Sparkline data={pnlPoints.map((p) => p.pnl)} />
+                <div>
+                  <Sparkline data={selectedSeries.map((p) => p.pnl)} />
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--muted)' }}>
+                    <span>Older</span>
+                    <span>Newer</span>
+                  </div>
+                </div>
               )}
             </div>
           </div>
@@ -250,9 +305,12 @@ export default function DashboardPage() {
         {/* right: log */}
         <section className="card log-panel">
           <div className="card-header">
-            <h2 style={{ fontWeight: 600 }}>Live log</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <h2 style={{ fontWeight: 600 }}>Live log</h2>
+              <span className="tag">{selectedMarketId ? `Market #${selectedMarketId}` : 'No market selected'}</span>
+            </div>
           </div>
-          <LiveLogPanel />
+          <LiveLogPanel selectedMarketId={selectedMarketId} logByMarket={logByMarket} />
         </section>
       </div>
 
@@ -263,22 +321,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* wallet modal */}
-      {walletOpen && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <h3>Connect wallet</h3>
-            <p>Select a wallet to simulate real trading.</p>
-            <button className="wallet-option" onClick={() => chooseWallet('0xAB12...FA23')}>
-              MetaMask (demo)
-            </button>
-            <button className="wallet-option" onClick={() => chooseWallet('0xDEAD...BEEF')}>
-              WalletConnect (demo)
-            </button>
-            <button className="cancel" onClick={() => setWalletOpen(false)}>Cancel</button>
-          </div>
-        </div>
-      )}
+      {/* no modal; real wallet connect above */}
     </div>
   );
 }
@@ -316,22 +359,14 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function LiveLogPanel() {
-  const [lines, setLines] = useState<string[]>([]);
-  useEffect(() => {
-    const ws = new WebSocket(WS_URL());
-    ws.onopen = () => setLines((p) => [...p, 'WS connected']);
-    ws.onmessage = (e) => setLines((p) => [...p, e.data]);
-    ws.onerror = () => setLines((p) => [...p, 'WS error']);
-    ws.onclose = () => setLines((p) => [...p, 'WS closed']);
-    return () => ws.close();
-  }, []);
+function LiveLogPanel({ selectedMarketId, logByMarket }: { selectedMarketId: number | null; logByMarket: Map<number, string[]> }) {
+  const lines = useMemo(() => (selectedMarketId ? logByMarket.get(selectedMarketId) || [] : []), [selectedMarketId, logByMarket]);
   return (
     <div className="log-body">
-      {lines.length === 0 ? (
-        <p className="log-empty">Waiting for messages…</p>
+      {(!selectedMarketId || lines.length === 0) ? (
+        <p className="log-empty">{selectedMarketId ? 'Waiting for messages…' : 'Select a market to view logs'}</p>
       ) : (
-        lines.map((l, i) => <div key={i} style={{ marginBottom: 6 }}>{l}</div>)
+        lines.slice().reverse().map((l, i) => <div key={i} style={{ marginBottom: 6 }}>{l}</div>)
       )}
     </div>
   );

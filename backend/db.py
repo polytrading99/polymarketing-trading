@@ -15,6 +15,6 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 async def init_db():
-    from models import Market, PnLTicks  # noqa: F401
+    from models import Market, PnLTicks, WalletAuth  # noqa: F401
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

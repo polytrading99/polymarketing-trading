@@ -28,7 +28,17 @@ export const WS_URL = () => {
 const fetcher = async (path: string, init?: RequestInit) => {
   const base = BACKEND_URL().replace(/\/+$/, "");
   const url = base + path;
-  const res = await fetch(url, { ...init, cache: "no-store" });
+  const headers: Record<string, string> = {
+    ...(init?.headers as Record<string, string> | undefined),
+  };
+  try {
+    const token = typeof window !== "undefined" ? localStorage.getItem("mm_jwt") : null;
+    if (token && !headers["Authorization"]) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+  } catch {}
+
+  const res = await fetch(url, { ...init, headers, cache: "no-store" });
   if (!res.ok) {
     const text = await res.text();
     console.error("API error", res.status, url, text);
@@ -54,3 +64,30 @@ export const startMarket = (id: number) =>
 export const stopMarket = (id: number) =>
   fetcher(`/markets/${id}/stop`, { method: "POST" });
 export const getPnl = (id: number) => fetcher(`/pnl/${id}`);
+
+// Auth helpers
+export const requestNonce = (address: string) =>
+  fetcher(`/auth/nonce`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ address }),
+  });
+
+export const verifySignature = (address: string, signature: string) =>
+  fetcher(`/auth/verify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ address, signature }),
+  });
+
+export const saveToken = (token: string) => {
+  if (typeof window !== "undefined") localStorage.setItem("mm_jwt", token);
+};
+
+export const loadToken = (): string | null => {
+  try {
+    return typeof window !== "undefined" ? localStorage.getItem("mm_jwt") : null;
+  } catch {
+    return null;
+  }
+};

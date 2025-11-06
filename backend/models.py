@@ -18,3 +18,11 @@ class PnLTicks(Base):
     ts: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), index=True)
     pnl: Mapped[Numeric] = mapped_column(Numeric(18, 6), default=0)
     inventory: Mapped[Numeric] = mapped_column(Numeric(18, 6), default=0)
+
+class WalletAuth(Base):
+    __tablename__ = "wallet_auth"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    address: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    nonce: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[DateTime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())

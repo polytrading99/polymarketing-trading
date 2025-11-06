@@ -7,6 +7,7 @@ from db import get_session
 from models import Market
 from schemas import MarketCreate, MarketOut
 from core.bot_manager import bot_manager
+from routes.auth import get_current_address
 
 router = APIRouter()
 
@@ -35,7 +36,11 @@ async def create_market(body: MarketCreate, session: AsyncSession = Depends(get_
         return m
 
 @router.post("/markets/{market_id}/start")
-async def start_market(market_id: int, session: AsyncSession = Depends(get_session)):
+async def start_market(
+    market_id: int,
+    session: AsyncSession = Depends(get_session),
+    _addr: str = Depends(get_current_address),
+):
     async with session as s:
         res = await s.execute(select(Market).where(Market.id == market_id))
         m = res.scalar_one_or_none()
@@ -45,6 +50,9 @@ async def start_market(market_id: int, session: AsyncSession = Depends(get_sessi
         return {"ok": True, "started": market_id}
 
 @router.post("/markets/{market_id}/stop")
-async def stop_market(market_id: int):
+async def stop_market(
+    market_id: int,
+    _addr: str = Depends(get_current_address),
+):
     await bot_manager.stop_market_loop(market_id)
     return {"ok": True, "stopped": market_id}
