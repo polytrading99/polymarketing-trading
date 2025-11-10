@@ -51,6 +51,8 @@ const fetcher = async (path: string, init?: RequestInit) => {
   return res.json();
 };
 
+export const apiFetcher = (path: string) => fetcher(path);
+
 // APIs
 export const listMarkets = () => fetcher("/markets");
 export const createMarket = (payload: any) =>

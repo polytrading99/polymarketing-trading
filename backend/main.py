@@ -1,9 +1,11 @@
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, Response
 from starlette.websockets import WebSocketState
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from db import get_session, init_db
 from models import Market, PnLTicks
 from routes.markets import router as markets_router
@@ -11,15 +13,28 @@ from routes.auth import router as auth_router
 import asyncio
 import random
 
+from settings import get_settings
+
+settings = get_settings()
+
 app = FastAPI(title="Polymarket Bot Backend", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def enforce_https_middleware(request: Request, call_next):
+    if settings.enforce_https:
+        scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+        if scheme != "https":
+            return JSONResponse(status_code=400, content={"detail": "HTTPS required"})
+    response = await call_next(request)
+    return response
 
 app.include_router(markets_router, prefix="")
 app.include_router(auth_router, prefix="")
@@ -38,6 +53,12 @@ async def startup():
 @app.get("/health")
 async def health():
     return {"ok": True}
+
+
+@app.get("/metrics")
+async def metrics():
+    payload = generate_latest()
+    return Response(content=payload, media_type=CONTENT_TYPE_LATEST)
 
 @app.get("/pnl/{market_id}")
 async def get_pnl(

@@ -52,6 +52,42 @@ curl -X POST http://localhost:8000/markets/1/start
 curl -X POST http://localhost:8000/markets/1/stop
 ```
 
+## Testing
+
+### Backend (pytest)
+```bash
+cd backend
+source .venv/bin/activate  # if not already active
+pytest
+```
+
+### Frontend (Playwright)
+```bash
+cd frontend
+npm install
+npx playwright install chromium
+npx playwright test
+```
+
+## Configuration
+
+Environment variables (with defaults):
+
+- `CORS_ALLOWED_ORIGINS` — comma-separated list of allowed origins (`http://localhost:3000`)
+- `ENFORCE_HTTPS` — set to `true` to require HTTPS (`false`)
+- `NONCE_TTL_SECONDS` — lifetime of wallet nonces before they expire (`300`)
+- `AUTH_RATE_LIMIT_MAX_REQUESTS` — maximum auth requests per window (`10`)
+- `AUTH_RATE_LIMIT_WINDOW_SECONDS` — rate limit window size (`60`)
+- `POLYMARKET_PUBLIC_API_BASE` — public market feed base URL (`https://gamma-api.polymarket.com`)
+- `POLYMARKET_API_BASE` — authenticated CLOB API base URL (`https://clob.polymarket.com`)
+- `POLYMARKET_API_KEY` — optional API key for private endpoints (unset)
+- `POLYMARKET_TIMEOUT_SECONDS` — timeout for Polymarket HTTP calls (`5`)
+- `BOT_LOOP_INTERVAL_SECONDS` — base bot loop cadence in seconds (`1.0`)
+- `BOT_RETRY_BACKOFF_SECONDS` — multiplier applied after failures (`2.0`)
+- `BOT_MAX_BACKOFF_SECONDS` — maximum backoff delay (`30`)
+- `BOT_QUOTE_SIZE` — virtual position size used for paper PnL (`25`)
+- `BOT_INVENTORY_CAP` — virtual inventory cap (`1000`)
+
 ## Next Steps (replace stubs)
 - Replace `core/bot_manager.py` `run_market_loop()` with real Polymarket API logic
 - Write to `pnl_ticks` as fills occur and inventory/fees update
